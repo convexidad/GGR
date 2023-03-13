@@ -1,0 +1,2 @@
+# GGR
+Global Gag Rule
