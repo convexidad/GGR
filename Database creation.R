@@ -2,6 +2,9 @@ library(WDI)
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
+library(broom)
+
+
 
 ######### Creación world_bank ####
 # Get list of countries
@@ -46,7 +49,8 @@ world_bank_data <- merge(wb_countries, wb_gdp, by = c("iso2c","country")) %>%
          life_expect = SP.DYN.LE00.IN) %>%
   mutate(republican = ifelse(date %in% c(1985:1992,
                                          2001:2008,
-                                         2017:2020),1,0),
+                                         2017:2020),1,
+                             ifelse(date %in% c(1993:2000,2009:2016,2021:2023),0,NA)),
          income_class = ifelse(income_class=="..",NA,
                                ifelse(income_class=="LM*","LM",income_class)),
          year = date %>% as.double())
@@ -74,17 +78,26 @@ usaid = usaid %>%
 
 write.csv(usaid,"Bases/usaid.csv")  
 
+writexl::write_xlsx(usaid %>% select(`Donor Project Id`),"Bases/projectID.xlsx")
+
 
 ######### Creación base IHME ####
 
+## Revisar elim_ch y el codebook para poder trabajarlo.
 ihme = read.csv("Bases/IHME_DAH.csv")
-ihme = ihme %>% 
+
+us_ihme = ihme %>% 
   filter(source=="United_States") %>%
   mutate(iso3c = recipient_isocode,
          country = recipient_country,
          year = year %>% as.double()) %>%
   left_join(world_bank_data, by=c("country","year","iso3c"))
 
+ihme_general = ihme %>% 
+  mutate(iso3c = recipient_isocode,
+         country = recipient_country,
+         year = year %>% as.double()) %>%
+  left_join(world_bank_data, by=c("country","year","iso3c"))
 
 write.csv(ihme,"Bases/ihme.csv")  
 
@@ -105,273 +118,77 @@ foreign = foreign_budget %>%
 
 ##### Gráficos ####
 ######### Foreign ####
-graf_foreign_total = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(constant_amount))) +
-  geom_smooth(method = "lm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(Constant Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) 
-
-graf_foreign = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(constant_amount), colour = partido)) +
-  geom_smooth(method = "lm") +
-# facet_grid(~Income.Group.Name) + 
-#  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(Constant Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) 
+foreign_graph = foreign %>% 
+  group_by(year) %>%
+  summarise(sum_amount = sum(constant_amount)) %>%
+  ungroup() %>% 
+  left_join(foreign, by="year") %>%
+  filter(year<2023)%>%
+  mutate(republicano = ifelse(year %in% c(2001:2008,2017:2020),"Republican",
+                              ifelse(year %in% c(2009:2016,2021:2023),"Democrat",NA)) %>% 
+           as.factor()) %>%
+  ggplot(aes(x = year, y = log(sum_amount), color = republicano))+
+  geom_point() +
+  geom_vline(xintercept = c(2009,2017,2021))+
+  labs(title = "Evolution of funds for Maternal and Child Health",
+       y = "Log of the Total Amount",
+       x = "Year",
+       caption = "Data obtained from the Foreign Budget of the United States")+
+  scale_color_manual(values = c("blue","red"))+
+  theme_classic()
   
-graf_foreign_group = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(constant_amount), colour = partido)) +
-  geom_smooth(method = "lm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(Constant Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) +
-  facet_grid(~Income.Group.Name)
 
-###
-  graf_foreign_total2 = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(current_amount))) +
-  geom_smooth(method = "lm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(current Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) 
-
-graf_foreign2 = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(current_amount), colour = partido)) +
-  geom_smooth(method = "lm") +
-# facet_grid(~Income.Group.Name) + 
-#  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(current Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) 
-  
-graf_foreign_group2 = foreign %>%
-  filter(republican %in% 0:1,
-         Income.Group.Name!="Upper Middle Income Country") %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"))%>%
-  ggplot(aes(x = year, y = log(current_amount), colour = partido)) +
-  geom_smooth(method = "lm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Maternal and Child Health",
-    y = "Log(current Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) +
-  facet_grid(~Income.Group.Name)
-
-######### USAID #####
-
-usaid$purpose1 = usaid$`Code Round1: Purpose` 
-
-graf_usaid = usaid %>%
-  filter(republican %in% 0:1) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         health = purpose1 %in% c("13020: Reproductive health care",
-                                                "13030: Family planning"))%>%
-  ggplot(aes(x = year, y = health, colour = partido)) +
-  geom_smooth(method = "glm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "US Foreign Aid (2006-2022)",
-    subtitle = "Health and Population",
-    y = "Log(Constant Amount)",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right")) + facet_wrap(~partido)
-
-graf_usaid
 
 ######### IHME ####
-ihme = ihme %>%
+# Ver si está corregido por inflación
+# Tomar la sumatoria
+
+ihme_total_graph = us_ihme %>%
   mutate(rmh_dah_20 = rmh_dah_20 %>% as.double(),
-         dah_20 = dah_20 %>% as.double())
+         dah_20 = dah_20 %>% as.double()) %>%
+  group_by(year) %>%
+  mutate(rmh_sum = sum(rmh_dah_20,na.rm=TRUE)) %>%
+  ungroup() %>% 
+  mutate(republicano = ifelse(year %in% c(1985:1992,2001:2008,2017:2020),"Republican",
+                              ifelse(year %in% c(1993:2000,2009:2016,2021:2023),"Democrat",NA)) %>% 
+           as.factor()) %>% 
+  ggplot(aes(x = year, y = log(rmh_sum), color = republicano))+
+  geom_point()+
+  geom_vline(xintercept = c(1993,2001,2009,2017,2021))+
+  labs(title = "Evolution of funds for reproductive and maternal health (1990-2020)",
+    y = "Log of Funds for RMH",
+    x = "Year") +
+  scale_color_manual(values = c("blue","red"))+
+  theme_classic()
 
-graf_ihme_total = ihme %>%
-  filter(republican %in% 0:1) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20) %>%
-  ggplot(aes(x = year, y = rmh_ratio, colour = partido)) +
-  geom_smooth(method = "glm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    y = "Funds for RMH",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
-
-
-graf_ihme_ratio = ihme %>%
-  filter(republican %in% 0:1) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20/dah_20 ) %>%
-  ggplot(aes(x = year, y = rmh_ratio, colour = partido)) +
-  geom_smooth(method = "glm") +
-  # facet_grid(~Income.Group.Name) + 
-  #  geom_point() +
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    subtitle = "Ratio of the total funds for health",
-    y = "Funds for RMH / Total funds for health",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
-
-graf_ihme_ratio_group = ihme %>%
-  filter(republican %in% 0:1,
-         income_class %in% c("L","LM")) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20/dah_20,
-         income_class = ifelse(income_class=="L","Low Income",
-                               ifelse(income_class=="LM","Lower Middle Income",NA))) %>%
-  ggplot(aes(x = year, y = rmh_ratio, colour = partido)) +
-  geom_smooth(method = "glm") +
-   facet_grid(~income_class) + 
-  #  geom_point() +
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    subtitle = "Ratio of the total funds for health",
-    y = "Funds for RMH / Total funds for health",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
-
-graf_ihme_total_group = ihme %>%
-  filter(republican %in% 0:1,
-         income_class %in% c("L","LM")) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20,
-         income_class = ifelse(income_class=="L","Low Income",
-                               ifelse(income_class=="LM","Lower Middle Income",NA))) %>%
-  ggplot(aes(x = year, y = rmh_ratio, colour = partido)) +
-  geom_smooth(method = "glm") +
-  facet_grid(~income_class) + 
-  #  geom_point() +
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    y = "Funds for RMH",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
-
-graf_ihme_ratio_general = ihme %>%
-  filter(republican %in% 0:1,
-         income_class %in% c("L","LM"),
-         rmh_dah_20>0,
-         year>=1992) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20/dah_20,
-         income_class = ifelse(income_class=="L","Low Income",
-                               ifelse(income_class=="LM","Lower Middle Income",NA))) %>%
-  ggplot(aes(x = year, y = rmh_ratio)) +
-  geom_smooth() +
-#  facet_grid(~income_class) + 
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    subtitle = "Ratio of the total funds for health",
-    y = "Funds for RMH / Total funds for health",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
-
-graf_ihme_total_general = ihme %>%
-  filter(republican %in% 0:1,
-         income_class %in% c("L","LM"),
-         rmh_dah_20>0,
-         year>=1992) %>%
-  mutate(partido = ifelse(republican==0,"Demócrata","Republicano"),
-         rmh_ratio = rmh_dah_20,
-         income_class = ifelse(income_class=="L","Low Income",
-                               ifelse(income_class=="LM","Lower Middle Income",NA))) %>%
-  ggplot(aes(x = year, y = rmh_ratio)) +
-  geom_smooth() +
-  #  facet_grid(~income_class) + 
-  labs(
-    title = "Evolution of funds for reproductive and maternal health (1990-2020)",
-    subtitle = "",
-    y = "Funds for RMH",
-    x = "Year"
-  ) +
-  theme_classic() +
-  theme(legend.position  = c("right"))
+ihme_ratio_graph = us_ihme %>%
+  mutate(rmh_dah_20 = rmh_dah_20 %>% as.double(),
+         dah_20 = dah_20 %>% as.double()) %>%
+  group_by(year) %>%
+  filter(dah_20>0)%>%
+  mutate(rmh_sum = sum(rmh_dah_20,na.rm=TRUE),
+         dah_sum = sum(dah_20,na.rm=TRUE)) %>%
+  ungroup() %>% 
+  mutate(republicano = ifelse(year %in% c(1985:1992,2001:2008,2017:2020),"Republican",
+                              ifelse(year %in% c(1993:2000,2009:2016,2021:2023),"Democrat",NA)) %>% 
+           as.factor(),
+         rmh_ratio = rmh_sum/dah_sum) %>% 
+  ggplot(aes(x = year, y = rmh_ratio, color = republicano))+
+  geom_point()+
+  geom_vline(xintercept = c(1993,2001,2009,2017,2021))+
+  labs(title = "Evolution of funds for reproductive and maternal health (1990-2020)",
+       y = "Funds for RMH / Total funds for Health",
+       x = "Year") +
+  scale_color_manual(values = c("blue","red"))+
+  theme_classic()
 
 
 
-graf_foreign_total
-graf_foreign
-graf_foreign_group
 
-graf_foreign_total2
-graf_foreign2
-graf_foreign_group2
+foreign_graph
 
-
-graf_ihme_ratio_general
-graf_ihme_ratio
-graf_ihme_ratio_group
-
-graf_ihme_total_general
-graf_ihme_total 
-graf_ihme_total_group
+ihme_ratio_graph
+ihme_total_graph
 
 ##### Estimaciones #####
 ######### USAID
